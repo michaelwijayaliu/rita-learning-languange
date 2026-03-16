@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doe School - 印中單字配對</title>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --bg: #f8f9fa;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+
+        h2, h3 { color: #333; text-align: center; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        input {
+            padding: 12px;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus { border-color: var(--primary); }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        button:active { transform: scale(0.98); }
+
+        .btn-add { background: var(--primary); color: white; }
+        .btn-refresh { background: #6c757d; color: white; }
+
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+            min-height: 150px;
+        }
+
+        .card {
+            background: white;
+            border: 2px solid var(--primary);
+            padding: 20px 10px;
+            text-align: center;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            user-select: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .card:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.1); }
+        .selected { background-color: var(--warning); border-color: #e6ac00; }
+        .matched { visibility: hidden; opacity: 0; pointer-events: none; }
+
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
+        th { background: #fdfdfd; color: #666; }
+        
+        .action-btns { display: flex; gap: 5px; }
+        .btn-edit { background: var(--warning); color: #000; padding: 5px 10px; font-size: 0.85rem; }
+        .btn-del { background: var(--danger); color: white; padding: 5px 10px; font-size: 0.85rem; }
+
+        .empty-msg { text-align: center; color: #999; padding: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🎴 印中單字配對遊戲</h2>
+    
+    <div class="controls">
+        <input type="text" id="idInput" placeholder="Bahasa Indonesia">
+        <input type="text" id="zhInput" placeholder="中文翻譯">
+        <button class="btn-add" onclick="handleAdd()">新增單字</button>
+        <button class="btn-refresh" onclick="initGame()">重新洗牌</button>
+    </div>
+
+    <div id="game-board"></div>
+
+    <hr>
+
+    <h3>📚 我的單字庫</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>印尼文</th>
+                    <th>中文</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="vocab-body"></tbody>
+        </table>
+        <div id="empty-notification" class="empty-msg" style="display:none;">目前沒有單字，請從上方新增！</div>
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'Rita_Vocab_Game_Data_v1';
+
+    // 1. Data Initialization
+    let vocabulary = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [
+        { id: "Apel", zh: "蘋果" },
+        { id: "Pisang", zh: "香蕉" },
+        { id: "Kucing", zh: "貓咪" }
+    ];
+
+    let selectedCards = [];
+
+    // 2. Voice Function
+    function playSound(text) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        // Detect if text is Indonesian or Chinese
+        msg.lang = /^[A-Za-z\s]+$/.test(text) ? 'id-ID' : 'zh-TW';
+        window.speechSynthesis.speak(msg);
+    }
+
+    // 3. Storage & Management
+    function updateData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(vocabulary));
+        renderManagementTable();
+        initGame();
+    }
+
+    function handleAdd() {
+        const idInput = document.getElementById('idInput');
+        const zhInput = document.getElementById('zhInput');
+        
+        const idVal = idInput.value.trim();
+        const zhVal = zhInput.value.trim();
+        
+        if (idVal && zhVal) {
+            vocabulary.push({ id: idVal, zh: zhVal });
+            idInput.value = '';
+            zhInput.value = '';
+            updateData();
+        } else {
+            alert("請同時輸入印尼文與中文！");
+        }
+    }
+
+    function deleteItem(index) {
+        if (confirm("確定要刪除這個單字嗎？")) {
+            vocabulary.splice(index, 1);
+            updateData();
+        }
+    }
+
+    function editItem(index) {
+        const item = vocabulary[index];
+        const newIdText = prompt("編輯印尼文:", item.id);
+        const newZhText = prompt("編輯中文:", item.zh);
+        
+        if (newIdText !== null && newZhText !== null && newIdText.trim() !== "" && newZhText.trim() !== "") {
+            vocabulary[index] = { id: newIdText.trim(), zh: newZhText.trim() };
+            updateData();
+        }
+    }
+
+    // 4. Game Rendering Logic
+    function initGame() {
+        const board = document.getElementById('game-board');
+        board.innerHTML = '';
+        selectedCards = [];
+
+        let gameItems = [];
+        vocabulary.forEach(item => {
+            gameItems.push({ text: item.id, match: item.zh });
+            gameItems.push({ text: item.zh, match: item.id });
+        });
+
+        gameItems.sort(() => Math.random() - 0.5);
+
+        gameItems.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerText = item.text;
+            card.onclick = () => handleCardClick(card, item);
+            board.appendChild(card);
+        });
+    }
+
+    function handleCardClick(cardEl, item) {
+        if (cardEl.classList.contains('matched') || cardEl.classList.contains('selected')) return;
+
+        playSound(item.text);
+        cardEl.classList.add('selected');
+        selectedCards.push({ el: cardEl, data: item });
+
+        if (selectedCards.length === 2) {
+            const [card1, card2] = selectedCards;
+
+            if (card1.data.match === card2.data.text) {
+                setTimeout(() => {
+                    card1.el.classList.add('matched');
+                    card2.el.classList.add('matched');
+                    checkWin();
+                }, 400);
+            } else {
+                setTimeout(() => {
+                    card1.el.classList.remove('selected');
+                    card2.el.classList.remove('selected');
+                }, 700);
+            }
+            selectedCards = [];
+        }
+    }
+
+    function checkWin() {
+        const remaining = document.querySelectorAll('.card:not(.matched)');
+        if (remaining.length === 0 && vocabulary.length > 0) {
+            alert("Luar biasa! 你完成了所有單字配對！🎉");
+        }
+    }
+
+    // 5. Table Rendering
+    function renderManagementTable() {
+        const tbody = document.getElementById('vocab-body');
+        const emptyMsg = document.getElementById('empty-notification');
+        tbody.innerHTML = '';
+        
+        if (vocabulary.length === 0) {
+            emptyMsg.style.display = 'block';
+            return;
+        }
+        emptyMsg.style.display = 'none';
+
+        vocabulary.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.id}</td>
+                <td>${item.zh}</td>
+                <td class="action-btns">
+                    <button class="btn-edit" onclick="editItem(${index})">編輯</button>
+                    <button class="btn-del" onclick="deleteItem(${index})">刪除</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    renderManagementTable();
+    initGame();
+</script>
+
+</body>
+</html>
